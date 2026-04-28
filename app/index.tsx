@@ -1,9 +1,14 @@
 import { Link } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { isPro, subscribe } from '@/lib/entitlement';
 import { colors, radius } from '@/theme';
 
 export default function HomeScreen() {
+  const [pro, setPro] = useState(isPro());
+  useEffect(() => subscribe(setPro), []);
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <View style={styles.hero}>
@@ -48,6 +53,17 @@ export default function HomeScreen() {
             3. Hvis stregkoden ikke er kendt, fotografér bagsiden i stedet.
           </Text>
         </View>
+
+        {!pro && (
+          <Link href="/paywall" asChild>
+            <Pressable style={({ pressed }) => [styles.proCta, pressed && styles.pressed]}>
+              <Text style={styles.proLabel}>FoodProof Pro</Text>
+              <Text style={styles.proCtaText}>
+                Lås op for ubegrænsede etiket-scanninger og fuld historik
+              </Text>
+            </Pressable>
+          </Link>
+        )}
 
         <Text style={styles.disclaimer}>
           Vejledende. Erstatter ikke individuelle kostråd fra sundhedsfaglige
@@ -106,6 +122,21 @@ const styles = StyleSheet.create({
   },
   secondaryHalf: { flex: 1 },
   secondaryBtnText: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  proCta: {
+    backgroundColor: colors.surface,
+    borderColor: colors.primary,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: 14,
+  },
+  proLabel: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  proCtaText: { color: colors.text, fontSize: 14, fontWeight: '600', lineHeight: 19 },
   infoCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,

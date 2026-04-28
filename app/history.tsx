@@ -10,22 +10,44 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { isPro, subscribe } from '@/lib/entitlement';
 import { clearHistory, HistoryEntry, listHistory } from '@/lib/history';
+import { FREE_HISTORY_DAYS } from '@/lib/quota';
 import { Verdict } from '@/lib/types';
 import { colors, radius } from '@/theme';
 
 export default function HistoryScreen() {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  const [pro, setPro] = useState(isPro());
+  const [hiddenCount, setHiddenCount] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       listHistory().then((list) => {
-        if (active) setEntries(list);
+        if (!active) return;
+        if (isPro()) {
+          setEntries(list);
+          setHiddenCount(0);
+        } else {
+          const cutoff = Date.now() - FREE_HISTORY_DAYS * 86_400_000;
+          const visible = list.filter(
+            (e) => new Date(e.scannedAtISO).getTime() >= cutoff,
+          );
+          setEntries(visible);
+          setHiddenCount(list.length - visible.length);
+        }
       });
       return () => {
         active = false;
       };
+    }, []),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const unsub = subscribe(setPro);
+      return unsub;
     }, []),
   );
 
@@ -80,6 +102,23 @@ export default function HistoryScreen() {
         contentContainerStyle={styles.list}
         renderItem={({ item }) => <Row entry={item} />}
         ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        ListFooterComponent={
+          !pro && hiddenCount > 0 ? (
+            <Pressable
+              onPress={() => router.push('/paywall')}
+              style={styles.upsell}
+            >
+              <Text style={styles.upsellTitle}>
+                {hiddenCount} ældre{' '}
+                {hiddenCount === 1 ? 'scan er' : 'scans er'} skjult
+              </Text>
+              <Text style={styles.upsellBody}>
+                Pro låser op for hele din historik (op til 500 scans).
+              </Text>
+              <Text style={styles.upsellCta}>Se Pro →</Text>
+            </Pressable>
+          ) : null
+        }
       />
     </SafeAreaView>
   );
@@ -216,4 +255,17 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 15, fontWeight: '600', color: colors.text },
   rowBrand: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
   rowDate: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
+  upsell: {
+    marginTop: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    gap: 4,
+  },
+  upsellTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  upsellBody: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
+  upsellCta: { fontSize: 13, fontWeight: '700', color: colors.primary, marginTop: 6 },
 });
+

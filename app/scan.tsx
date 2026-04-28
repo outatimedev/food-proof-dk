@@ -12,8 +12,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ErrorCard } from '@/components/ErrorCard';
 import { analyzeLabelImage } from '@/lib/analyze';
+import { isPro } from '@/lib/entitlement';
 import { ClassifiedError, classify } from '@/lib/errors';
 import { fetchByBarcode, hasScoreableNutrition } from '@/lib/openfoodfacts';
+import { canUseVision, chargeVision } from '@/lib/quota';
 import { scoreProduct } from '@/lib/scoring';
 import { Product } from '@/lib/types';
 import { colors, radius } from '@/theme';
@@ -113,6 +115,12 @@ export default function ScanScreen() {
     base64: string,
     mediaType: 'image/jpeg' | 'image/png',
   ) => {
+    const pro = isPro();
+    if (!(await canUseVision(pro))) {
+      setBusy(null);
+      router.push('/paywall');
+      return;
+    }
     if (!API_KEY) {
       setBusy(null);
       setError({
@@ -129,6 +137,9 @@ export default function ScanScreen() {
         imageBase64: base64,
         mediaType,
       });
+      // Charge quota only on success — failed calls don't burn the user's
+      // free-tier daily allowance.
+      await chargeVision(pro);
       goToResult(product);
     } catch (err) {
       setBusy(null);
