@@ -18,6 +18,7 @@ export default function RootLayout() {
         <Stack.Screen name="scan" options={{ title: 'Scan' }} />
         <Stack.Screen name="manual" options={{ title: 'Manuel indtastning' }} />
         <Stack.Screen name="result" options={{ title: 'Resultat' }} />
+        <Stack.Screen name="history" options={{ title: 'Historik' }} />
       </Stack>
     </>
   );

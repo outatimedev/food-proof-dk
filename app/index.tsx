@@ -22,11 +22,18 @@ export default function HomeScreen() {
           </Pressable>
         </Link>
 
-        <Link href="/manual" asChild>
-          <Pressable style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}>
-            <Text style={styles.secondaryBtnText}>Indtast stregkode manuelt</Text>
-          </Pressable>
-        </Link>
+        <View style={styles.secondaryRow}>
+          <Link href="/manual" asChild>
+            <Pressable style={({ pressed }) => [styles.secondaryBtn, styles.secondaryHalf, pressed && styles.pressed]}>
+              <Text style={styles.secondaryBtnText}>Manuel indtastning</Text>
+            </Pressable>
+          </Link>
+          <Link href="/history" asChild>
+            <Pressable style={({ pressed }) => [styles.secondaryBtn, styles.secondaryHalf, pressed && styles.pressed]}>
+              <Text style={styles.secondaryBtnText}>Historik</Text>
+            </Pressable>
+          </Link>
+        </View>
 
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>Sådan virker det</Text>
@@ -89,6 +96,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
+  secondaryRow: { flexDirection: 'row', gap: 10 },
   secondaryBtn: {
     borderColor: colors.border,
     borderWidth: 1,
@@ -96,6 +104,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
   },
+  secondaryHalf: { flex: 1 },
   secondaryBtnText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   infoCard: {
     backgroundColor: colors.surface,

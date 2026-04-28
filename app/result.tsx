@@ -1,7 +1,8 @@
 import { Link, useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { appendHistoryDeduped } from '@/lib/history';
 import { rules } from '@/lib/rules';
 import { Band, Product, ScoreResult, Verdict } from '@/lib/types';
 import { colors, radius } from '@/theme';
@@ -20,6 +21,20 @@ export default function ResultScreen() {
       return null;
     }
   }, [params.product, params.score]);
+
+  // Persist to history once per (product, score) view. Dedup window inside
+  // appendHistoryDeduped prevents the same scan being written twice when the
+  // user navigates back and forward.
+  const persistedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const key = `${params.product}|${params.score}`;
+    if (persistedKeyRef.current === key) return;
+    persistedKeyRef.current = key;
+    appendHistoryDeduped(data.product, data.score).catch(() => {
+      // Best-effort: history failures must never break the result screen.
+    });
+  }, [data, params.product, params.score]);
 
   if (!data) {
     return (
