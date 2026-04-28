@@ -27,6 +27,7 @@ const PRO_ENTITLEMENT = 'pro';
 const DEV_PRO_KEY = 'foodproof.dev_pro';
 
 let cachedPro = false;
+let cachedRcAppUserId: string | null = null;
 const listeners = new Set<(pro: boolean) => void>();
 
 function emit() {
@@ -42,6 +43,10 @@ export function isPro(): boolean {
   return cachedPro;
 }
 
+export function getRcAppUserId(): string | null {
+  return cachedRcAppUserId;
+}
+
 // ---------- Real RevenueCat path ----------
 
 async function realInit(): Promise<void> {
@@ -49,10 +54,12 @@ async function realInit(): Promise<void> {
   Purchases.configure({ apiKey: KEY });
   Purchases.addCustomerInfoUpdateListener((info) => {
     cachedPro = !!info.entitlements.active[PRO_ENTITLEMENT];
+    cachedRcAppUserId = info.originalAppUserId ?? null;
     emit();
   });
   const info = await Purchases.getCustomerInfo();
   cachedPro = !!info.entitlements.active[PRO_ENTITLEMENT];
+  cachedRcAppUserId = info.originalAppUserId ?? null;
   emit();
 }
 

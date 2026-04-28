@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ErrorCard } from '@/components/ErrorCard';
-import { analyzeLabelImage } from '@/lib/analyze';
+import { analyzeLabelImage, VisionExtractionError } from '@/lib/analyze';
 import { isPro } from '@/lib/entitlement';
 import { ClassifiedError, classify } from '@/lib/errors';
 import { fetchByBarcode, hasScoreableNutrition } from '@/lib/openfoodfacts';
@@ -20,7 +20,8 @@ import { scoreProduct } from '@/lib/scoring';
 import { Product } from '@/lib/types';
 import { colors, radius } from '@/theme';
 
-const API_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
+const HAS_VISION_BACKEND =
+  !!process.env.EXPO_PUBLIC_API_BASE_URL || !!process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
 
 type Mode = 'barcode' | 'label';
 
@@ -116,33 +117,36 @@ export default function ScanScreen() {
     mediaType: 'image/jpeg' | 'image/png',
   ) => {
     const pro = isPro();
+    // Local quota is advisory — the proxy is the real gate. We pre-check so
+    // free users see the paywall *before* an upload, not after.
     if (!(await canUseVision(pro))) {
       setBusy(null);
       router.push('/paywall');
       return;
     }
-    if (!API_KEY) {
+    if (!HAS_VISION_BACKEND) {
       setBusy(null);
       setError({
         kind: 'auth_failed',
-        titleDa: 'API-nøgle mangler',
-        bodyDa: 'Tilføj EXPO_PUBLIC_ANTHROPIC_API_KEY til .env og genstart Expo.',
+        titleDa: 'Vision er ikke konfigureret',
+        bodyDa:
+          'Sæt EXPO_PUBLIC_API_BASE_URL (proxy) eller EXPO_PUBLIC_ANTHROPIC_API_KEY (dev) i .env.',
         cta: { primary: 'OK' },
       });
       return;
     }
     try {
-      const product = await analyzeLabelImage({
-        apiKey: API_KEY,
-        imageBase64: base64,
-        mediaType,
-      });
-      // Charge quota only on success — failed calls don't burn the user's
-      // free-tier daily allowance.
+      const product = await analyzeLabelImage({ imageBase64: base64, mediaType });
+      // Mirror the server charge locally so the settings/usage display
+      // stays in sync. Pro users skip both.
       await chargeVision(pro);
       goToResult(product);
     } catch (err) {
       setBusy(null);
+      if (err instanceof VisionExtractionError && err.code === 'quota_exceeded') {
+        router.push('/paywall');
+        return;
+      }
       setError(classify(err));
     }
   };
