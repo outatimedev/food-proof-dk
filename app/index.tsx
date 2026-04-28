@@ -10,24 +10,29 @@ export default function HomeScreen() {
         <Text style={styles.flag}>🇩🇰</Text>
         <Text style={styles.title}>FoodProof DK</Text>
         <Text style={styles.subtitle}>
-          Scan en dansk fødevareetiket og se hvordan den passer med
-          Sundhedsstyrelsens officielle kostråd.
+          Scan en stregkode eller en etiket og se hvordan produktet passer
+          med Sundhedsstyrelsens officielle kostråd.
         </Text>
       </View>
 
       <View style={styles.actions}>
         <Link href="/scan" asChild>
           <Pressable style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}>
-            <Text style={styles.primaryBtnText}>Scan en etiket</Text>
+            <Text style={styles.primaryBtnText}>Scan et produkt</Text>
           </Pressable>
         </Link>
 
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>Sådan virker det</Text>
-          <Text style={styles.infoLine}>1. Tag et billede af bagsiden af produktet.</Text>
-          <Text style={styles.infoLine}>2. FoodProof aflæser næringsindholdet.</Text>
           <Text style={styles.infoLine}>
-            3. Vi sammenligner med Sundhedsstyrelsens grænser for salt, sukker og mættet fedt.
+            1. Scan stregkoden — vi slår produktet op i Open Food Facts.
+          </Text>
+          <Text style={styles.infoLine}>
+            2. Vi sammenholder næringsindholdet med Sundhedsstyrelsens grænser
+            for salt, sukker og mættet fedt.
+          </Text>
+          <Text style={styles.infoLine}>
+            3. Hvis stregkoden ikke er kendt, fotografér bagsiden i stedet.
           </Text>
         </View>
 

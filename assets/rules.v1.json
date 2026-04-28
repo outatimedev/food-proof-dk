@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "effectiveFrom": "2025-01-01",
+  "framework": "FSA traffic-light bands as a consumer-friendly proxy for Sundhedsstyrelsen's De Officielle Kostraad",
+  "sources": [
+    {
+      "name": "Sundhedsstyrelsen — De Officielle Kostraad (2021)",
+      "url": "https://www.sst.dk/da/Udgivelser/2021/De-officielle-Kostraad"
+    },
+    {
+      "name": "Foedevarestyrelsen — Noeglehulsmaerket (BEK nr 159 af 24/02/2015 with amendments)",
+      "url": "https://www.retsinformation.dk/eli/lta/2015/159"
+    },
+    {
+      "name": "UK FSA — Front of pack nutrition labelling guidance",
+      "url": "https://www.food.gov.uk/sites/default/files/media/document/fop-guidance_0.pdf"
+    }
+  ],
+  "categories": {
+    "food": {
+      "basis": "per_100g",
+      "thresholds": {
+        "salt": { "amberAt": 0.3, "redAt": 1.5, "unit": "g" },
+        "sugar": { "amberAt": 5, "redAt": 22.5, "unit": "g" },
+        "saturatedFat": { "amberAt": 1.5, "redAt": 5, "unit": "g" }
+      }
+    },
+    "beverage": {
+      "basis": "per_100ml",
+      "thresholds": {
+        "salt": { "amberAt": 0.3, "redAt": 0.75, "unit": "g" },
+        "sugar": { "amberAt": 2.5, "redAt": 11.25, "unit": "g" },
+        "saturatedFat": { "amberAt": 0.75, "redAt": 2.5, "unit": "g" }
+      }
+    }
+  },
+  "fiberBonusPer100g": 6,
+  "dailyReference": {
+    "saltMaxG": 6,
+    "addedSugarMaxPctEnergy": 10,
+    "saturatedFatMaxPctEnergy": 10
+  }
+}

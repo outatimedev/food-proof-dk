@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,50 +10,76 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { analyzeLabelImage } from '@/lib/analyze';
-import { scoreLabel } from '@/lib/scoring';
+import { analyzeLabelImage, VisionExtractionError } from '@/lib/analyze';
+import {
+  fetchByBarcode,
+  hasScoreableNutrition,
+  OpenFoodFactsNotFoundError,
+} from '@/lib/openfoodfacts';
+import { scoreProduct } from '@/lib/scoring';
+import { Product } from '@/lib/types';
 import { colors, radius } from '@/theme';
 
 const API_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
 
+type Mode = 'barcode' | 'label';
+
 export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<Mode>('barcode');
+  const [busy, setBusy] = useState<null | string>(null);
   const [error, setError] = useState<string | null>(null);
+  const lockRef = useRef(false);
 
-  const handleResult = async (base64: string, mediaType: 'image/jpeg' | 'image/png') => {
-    if (!API_KEY) {
-      setError(
-        'EXPO_PUBLIC_ANTHROPIC_API_KEY mangler. Tilføj den til .env og genstart Expo.',
-      );
-      setBusy(false);
-      return;
-    }
-    try {
-      const extracted = await analyzeLabelImage({
-        apiKey: API_KEY,
-        imageBase64: base64,
-        mediaType,
-      });
-      const score = scoreLabel(extracted);
-      router.replace({
-        pathname: '/result',
-        params: {
-          extracted: JSON.stringify(extracted),
-          score: JSON.stringify(score),
-        },
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setBusy(false);
-    }
-  };
+  const goToResult = useCallback((product: Product) => {
+    const score = scoreProduct(product);
+    router.replace({
+      pathname: '/result',
+      params: {
+        product: JSON.stringify(product),
+        score: JSON.stringify(score),
+      },
+    });
+  }, []);
 
-  const onCapture = async () => {
+  const onBarcodeScanned = useCallback(
+    async ({ data, type }: { data: string; type: string }) => {
+      if (lockRef.current || busy || mode !== 'barcode') return;
+      lockRef.current = true;
+      setError(null);
+      setBusy('Slår op i Open Food Facts…');
+      try {
+        const product = await fetchByBarcode(data);
+        if (!hasScoreableNutrition(product)) {
+          // OFF has the product but no nutrition — fall back to label OCR.
+          setBusy(null);
+          setError(
+            `Fandt produktet men ingen næringsdata. Skift til "Etiket" og fotografér bagsiden.`,
+          );
+          lockRef.current = false;
+          return;
+        }
+        goToResult(product);
+      } catch (err) {
+        setBusy(null);
+        if (err instanceof OpenFoodFactsNotFoundError) {
+          setError(
+            `Stregkode ${data} (${type}) er ikke i databasen. Skift til "Etiket" og fotografér bagsiden.`,
+          );
+        } else {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+        lockRef.current = false;
+      }
+    },
+    [busy, goToResult, mode],
+  );
+
+  const captureLabel = async () => {
     if (!cameraRef.current || busy) return;
     setError(null);
-    setBusy(true);
+    setBusy('Aflæser etiket…');
     try {
       const photo = await cameraRef.current.takePictureAsync({
         base64: true,
@@ -61,14 +87,14 @@ export default function ScanScreen() {
         skipProcessing: true,
       });
       if (!photo?.base64) throw new Error('Kunne ikke læse billede.');
-      await handleResult(photo.base64, 'image/jpeg');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setBusy(false);
+      await runVision(photo.base64, 'image/jpeg');
+    } catch (err) {
+      setBusy(null);
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const onPickFromLibrary = async () => {
+  const pickFromLibrary = async () => {
     if (busy) return;
     setError(null);
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -77,11 +103,44 @@ export default function ScanScreen() {
       quality: 0.6,
     });
     if (result.canceled || !result.assets[0]?.base64) return;
-    setBusy(true);
+    setBusy('Aflæser etiket…');
     const asset = result.assets[0];
     const mediaType: 'image/jpeg' | 'image/png' =
       asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
-    await handleResult(asset.base64!, mediaType);
+    try {
+      await runVision(asset.base64!, mediaType);
+    } catch (err) {
+      setBusy(null);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const runVision = async (
+    base64: string,
+    mediaType: 'image/jpeg' | 'image/png',
+  ) => {
+    if (!API_KEY) {
+      setBusy(null);
+      setError(
+        'EXPO_PUBLIC_ANTHROPIC_API_KEY mangler. Tilføj den til .env og genstart Expo.',
+      );
+      return;
+    }
+    try {
+      const product = await analyzeLabelImage({
+        apiKey: API_KEY,
+        imageBase64: base64,
+        mediaType,
+      });
+      goToResult(product);
+    } catch (err) {
+      setBusy(null);
+      if (err instanceof VisionExtractionError) {
+        setError(`Vision fejlede: ${err.message}`);
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }
   };
 
   if (!permission) {
@@ -97,13 +156,13 @@ export default function ScanScreen() {
       <SafeAreaView style={styles.permissionContainer} edges={['bottom']}>
         <Text style={styles.permissionTitle}>Kameraadgang</Text>
         <Text style={styles.permissionBody}>
-          FoodProof skal bruge kameraet til at scanne fødevareetiketter.
+          FoodProof skal bruge kameraet til at scanne stregkoder og etiketter.
         </Text>
         <Pressable style={styles.primaryBtn} onPress={requestPermission}>
           <Text style={styles.primaryBtnText}>Giv adgang</Text>
         </Pressable>
-        <Pressable style={styles.secondaryBtn} onPress={onPickFromLibrary}>
-          <Text style={styles.secondaryBtnText}>Vælg fra fotobibliotek</Text>
+        <Pressable style={styles.secondaryBtn} onPress={pickFromLibrary}>
+          <Text style={styles.secondaryBtnText}>Vælg billede fra bibliotek</Text>
         </Pressable>
       </SafeAreaView>
     );
@@ -111,15 +170,64 @@ export default function ScanScreen() {
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+      <CameraView
+        ref={cameraRef}
+        style={StyleSheet.absoluteFill}
+        facing="back"
+        barcodeScannerSettings={
+          mode === 'barcode'
+            ? { barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'itf14', 'code128'] }
+            : undefined
+        }
+        onBarcodeScanned={mode === 'barcode' ? onBarcodeScanned : undefined}
+      />
 
-      <View style={styles.overlay}>
-        <View style={styles.frame}>
-          <Text style={styles.frameHint}>Centrér næringsdeklarationen</Text>
+      <View style={styles.overlay} pointerEvents="none">
+        <View style={[styles.frame, mode === 'barcode' && styles.frameBarcode]}>
+          <Text style={styles.frameHint}>
+            {mode === 'barcode' ? 'Centrér stregkoden' : 'Centrér næringsdeklarationen'}
+          </Text>
         </View>
       </View>
 
-      {error && (
+      {/* Mode toggle */}
+      <SafeAreaView style={styles.topBar} edges={['top']}>
+        <View style={styles.segment}>
+          <Pressable
+            onPress={() => {
+              setMode('barcode');
+              setError(null);
+              lockRef.current = false;
+            }}
+            style={[styles.segmentBtn, mode === 'barcode' && styles.segmentBtnActive]}
+          >
+            <Text style={[styles.segmentText, mode === 'barcode' && styles.segmentTextActive]}>
+              Stregkode
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setMode('label');
+              setError(null);
+              lockRef.current = false;
+            }}
+            style={[styles.segmentBtn, mode === 'label' && styles.segmentBtnActive]}
+          >
+            <Text style={[styles.segmentText, mode === 'label' && styles.segmentTextActive]}>
+              Etiket
+            </Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+
+      {busy && (
+        <View style={styles.busyBox}>
+          <ActivityIndicator color="#fff" />
+          <Text style={styles.busyText}>{busy}</Text>
+        </View>
+      )}
+
+      {error && !busy && (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
@@ -128,27 +236,33 @@ export default function ScanScreen() {
       <SafeAreaView style={styles.controls} edges={['bottom']}>
         <Pressable
           style={styles.libraryBtn}
-          onPress={onPickFromLibrary}
-          disabled={busy}
+          onPress={pickFromLibrary}
+          disabled={!!busy}
         >
           <Text style={styles.libraryBtnText}>Bibliotek</Text>
         </Pressable>
 
-        <Pressable
-          onPress={onCapture}
-          disabled={busy}
-          style={({ pressed }) => [
-            styles.shutter,
-            pressed && styles.shutterPressed,
-            busy && styles.shutterBusy,
-          ]}
-        >
-          {busy ? (
-            <ActivityIndicator color={colors.primary} />
-          ) : (
-            <View style={styles.shutterInner} />
-          )}
-        </Pressable>
+        {mode === 'label' ? (
+          <Pressable
+            onPress={captureLabel}
+            disabled={!!busy}
+            style={({ pressed }) => [
+              styles.shutter,
+              pressed && styles.shutterPressed,
+              busy && styles.shutterBusy,
+            ]}
+          >
+            {busy ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <View style={styles.shutterInner} />
+            )}
+          </Pressable>
+        ) : (
+          <View style={styles.shutterPlaceholder}>
+            <Text style={styles.shutterPlaceholderText}>Auto</Text>
+          </View>
+        )}
 
         <View style={styles.libraryBtn} />
       </SafeAreaView>
@@ -188,6 +302,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingBottom: 12,
   },
+  frameBarcode: { aspectRatio: 2.4, width: '90%' },
   frameHint: {
     color: '#fff',
     fontSize: 13,
@@ -196,9 +311,44 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: radius.sm,
   },
+  topBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    alignItems: 'center',
+    paddingTop: 8,
+  },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: radius.md,
+    padding: 4,
+  },
+  segmentBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+  },
+  segmentBtnActive: { backgroundColor: '#fff' },
+  segmentText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  segmentTextActive: { color: colors.primary },
+  busyBox: {
+    position: 'absolute',
+    bottom: 200,
+    left: 24,
+    right: 24,
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 14,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  busyText: { color: '#fff', fontSize: 14, flex: 1 },
   errorBox: {
     position: 'absolute',
-    bottom: 160,
+    bottom: 200,
     left: 16,
     right: 16,
     backgroundColor: colors.redBg,
@@ -231,11 +381,21 @@ const styles = StyleSheet.create({
   },
   shutterPressed: { transform: [{ scale: 0.95 }] },
   shutterBusy: { opacity: 0.6 },
-  shutterInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
+  shutterInner: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary },
+  shutterPlaceholder: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shutterPlaceholderText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1,
   },
   libraryBtn: {
     width: 80,

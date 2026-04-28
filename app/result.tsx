@@ -1,17 +1,27 @@
 import { Link, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Band } from '@/lib/guidelines';
-import { ExtractedLabel, ScoreResult, Verdict } from '@/lib/scoring';
+import { rules } from '@/lib/rules';
+import { Band, Product, ScoreResult, Verdict } from '@/lib/types';
 import { colors, radius } from '@/theme';
 
 export default function ResultScreen() {
-  const { extracted, score } = useLocalSearchParams<{
-    extracted: string;
-    score: string;
-  }>();
+  const params = useLocalSearchParams<{ product: string; score: string }>();
 
-  if (!extracted || !score) {
+  const data = useMemo(() => {
+    if (!params.product || !params.score) return null;
+    try {
+      return {
+        product: JSON.parse(params.product) as Product,
+        score: JSON.parse(params.score) as ScoreResult,
+      };
+    } catch {
+      return null;
+    }
+  }, [params.product, params.score]);
+
+  if (!data) {
     return (
       <SafeAreaView style={styles.center}>
         <Text style={styles.muted}>Intet resultat at vise.</Text>
@@ -19,48 +29,32 @@ export default function ResultScreen() {
     );
   }
 
-  const label = JSON.parse(extracted) as ExtractedLabel;
-  const result = JSON.parse(score) as ScoreResult;
+  const { product, score } = data;
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <VerdictCard verdict={result.verdict} headline={result.headlineDa} subhead={result.subheadDa} />
+        <VerdictCard verdict={score.verdict} headline={score.headlineDa} subhead={score.subheadDa} />
 
-        {(label.productName || label.brand) && (
-          <View style={styles.productCard}>
-            {label.productName && (
-              <Text style={styles.productName}>{label.productName}</Text>
-            )}
-            {label.brand && <Text style={styles.brand}>{label.brand}</Text>}
-          </View>
-        )}
+        <ProductCard product={product} />
 
-        <Text style={styles.sectionTitle}>Pr. 100 g</Text>
+        <Text style={styles.sectionTitle}>
+          {score.basis === 'per_100ml' ? 'Pr. 100 ml' : 'Pr. 100 g'}
+        </Text>
         <View style={styles.findings}>
-          {result.findings.map((f) => (
-            <FindingRow key={f.nutrient} band={f.band} title={f.labelDa} value={f.valuePer100g} rationale={f.rationaleDa} />
+          {score.findings.map((f) => (
+            <FindingRow
+              key={f.nutrient}
+              band={f.band}
+              title={f.labelDa}
+              value={f.value}
+              rationale={f.rationaleDa}
+              basis={score.basis}
+            />
           ))}
         </View>
 
-        <Text style={styles.sectionTitle}>Reference</Text>
-        <View style={styles.refCard}>
-          <Text style={styles.refLine}>
-            Tærskler følger Sundhedsstyrelsens "De Officielle Kostråd" og Nøglehullets kriterier.
-          </Text>
-          <Text style={styles.refLine}>
-            Salt: lavt &lt; 0,3 g · højt &gt; 1,5 g pr. 100 g.
-          </Text>
-          <Text style={styles.refLine}>
-            Sukker: lavt &lt; 5 g · højt &gt; 22,5 g pr. 100 g.
-          </Text>
-          <Text style={styles.refLine}>
-            Mættet fedt: lavt &lt; 1,5 g · højt &gt; 5 g pr. 100 g.
-          </Text>
-          <Text style={styles.refLine}>
-            Kostfibre: ≥ 6 g pr. 100 g opfylder Nøglehullets fuldkornskriterium.
-          </Text>
-        </View>
+        <SourceCard product={product} score={score} />
 
         <Link href="/scan" replace asChild>
           <Pressable style={styles.primaryBtn}>
@@ -98,18 +92,37 @@ function VerdictCard({
   );
 }
 
+function ProductCard({ product }: { product: Product }) {
+  const hasMeta = product.productName || product.brand || product.imageUrl;
+  if (!hasMeta) return null;
+  return (
+    <View style={styles.productCard}>
+      {product.imageUrl ? (
+        <Image source={{ uri: product.imageUrl }} style={styles.productImage} />
+      ) : null}
+      <View style={styles.productMeta}>
+        {product.productName && <Text style={styles.productName}>{product.productName}</Text>}
+        {product.brand && <Text style={styles.brand}>{product.brand}</Text>}
+      </View>
+    </View>
+  );
+}
+
 function FindingRow({
   band,
   title,
   value,
   rationale,
+  basis,
 }: {
   band: Band;
   title: string;
   value: number | null;
   rationale: string;
+  basis: 'per_100g' | 'per_100ml';
 }) {
   const palette = bandPalette(band);
+  const unitLabel = basis === 'per_100ml' ? 'g/100ml' : 'g/100g';
   return (
     <View style={[styles.finding, { backgroundColor: palette.bg }]}>
       <View style={[styles.bandDot, { backgroundColor: palette.fg }]} />
@@ -117,11 +130,44 @@ function FindingRow({
         <View style={styles.findingHeader}>
           <Text style={styles.findingTitle}>{title}</Text>
           <Text style={[styles.findingValue, { color: palette.fg }]}>
-            {value === null ? '–' : `${value.toFixed(2)} g`}
+            {value === null ? '–' : `${value.toFixed(2)} ${unitLabel}`}
           </Text>
         </View>
         <Text style={styles.findingRationale}>{rationale}</Text>
       </View>
+    </View>
+  );
+}
+
+function SourceCard({ product, score }: { product: Product; score: ScoreResult }) {
+  const dataLine = (() => {
+    switch (product.source.kind) {
+      case 'open_food_facts': {
+        const date = new Date(product.source.lastModifiedISO).toLocaleDateString('da-DK');
+        return `Næringsdata: Open Food Facts (sidst opdateret ${date}).`;
+      }
+      case 'vision_ocr':
+        return `Næringsdata: aflæst fra dit billede med Claude (${product.source.model}). Dobbelttjek selv etiketten.`;
+      case 'manual':
+        return 'Næringsdata: indtastet manuelt.';
+    }
+  })();
+
+  return (
+    <View style={styles.refCard}>
+      <Text style={styles.refTitle}>Hvor kommer vurderingen fra?</Text>
+      <Text style={styles.refLine}>{dataLine}</Text>
+      <Text style={styles.refLine}>
+        Tærskler: regler v{score.appliedRulesVersion} ({score.appliedCategory === 'beverage' ? 'drikkevarer' : 'fødevarer'}, {score.basis === 'per_100ml' ? 'pr. 100 ml' : 'pr. 100 g'}).
+      </Text>
+      {rules.sources.map((s) => (
+        <Text key={s.url} style={styles.refLine}>
+          · {s.name}
+        </Text>
+      ))}
+      <Text style={styles.disclaimer}>
+        Vejledende. Erstatter ikke individuelle kostråd fra sundhedsfaglige personer.
+      </Text>
     </View>
   );
 }
@@ -172,7 +218,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: 16,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
   },
+  productImage: {
+    width: 60,
+    height: 60,
+    borderRadius: radius.sm,
+    backgroundColor: colors.border,
+  },
+  productMeta: { flex: 1 },
   productName: { fontSize: 18, fontWeight: '700', color: colors.text },
   brand: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
   sectionTitle: {
@@ -191,12 +247,7 @@ const styles = StyleSheet.create({
     gap: 12,
     alignItems: 'flex-start',
   },
-  bandDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginTop: 5,
-  },
+  bandDot: { width: 12, height: 12, borderRadius: 6, marginTop: 5 },
   findingBody: { flex: 1, gap: 4 },
   findingHeader: {
     flexDirection: 'row',
@@ -212,7 +263,9 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 6,
   },
-  refLine: { fontSize: 13, color: colors.text, lineHeight: 19 },
+  refTitle: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 4 },
+  refLine: { fontSize: 12, color: colors.text, lineHeight: 17 },
+  disclaimer: { fontSize: 11, color: colors.textMuted, marginTop: 8 },
   primaryBtn: {
     backgroundColor: colors.primary,
     borderRadius: radius.md,

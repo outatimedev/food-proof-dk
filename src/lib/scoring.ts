@@ -1,135 +1,150 @@
+import { classifyCategory, NUTRIENT_LABEL_DA, rules } from './rules';
 import {
   Band,
-  FIBER_BONUS_PER_100G,
-  LOWER_IS_BETTER,
-  NUTRIENT_LABEL_DA,
-  Nutrient,
-} from './guidelines';
+  NutrientFinding,
+  Product,
+  ScoreResult,
+  Verdict,
+} from './types';
 
-export interface NutritionPer100g {
-  salt?: number;
-  sugar?: number;
-  saturatedFat?: number;
-  fiber?: number;
-}
-
-export interface ExtractedLabel {
-  productName?: string;
-  brand?: string;
-  ingredientsDa?: string;
-  nutritionPer100g: NutritionPer100g;
-  notes?: string;
-}
-
-export interface NutrientFinding {
-  nutrient: Nutrient;
-  labelDa: string;
-  valuePer100g: number | null;
-  band: Band;
-  rationaleDa: string;
-}
-
-export type Verdict = 'proof' | 'moderate' | 'warning' | 'unknown';
-
-export interface ScoreResult {
-  verdict: Verdict;
-  headlineDa: string;
-  subheadDa: string;
-  findings: NutrientFinding[];
-}
-
-function bandFor(value: number, nutrient: Exclude<Nutrient, 'fiber'>): Band {
-  const t = LOWER_IS_BETTER[nutrient];
-  if (value >= t.red) return 'red';
-  if (value >= t.amber) return 'amber';
+function bandFor(value: number, amberAt: number, redAt: number): Band {
+  if (value >= redAt) return 'red';
+  if (value >= amberAt) return 'amber';
   return 'green';
 }
 
-function rationale(nutrient: Nutrient, value: number, band: Band): string {
-  if (nutrient === 'fiber') {
-    return value >= FIBER_BONUS_PER_100G
-      ? `${value.toFixed(1)} g/100g — opfylder Nøglehullets fuldkornskriterium (≥ ${FIBER_BONUS_PER_100G} g).`
-      : `${value.toFixed(1)} g/100g — under Nøglehullets fuldkornskriterium (${FIBER_BONUS_PER_100G} g).`;
-  }
-  const t = LOWER_IS_BETTER[nutrient];
+// Sanity check: catch obvious extraction errors before scoring. Real food
+// can't have, say, 80g of salt per 100g; values like that almost always come
+// from OCR misreads (e.g. "0.8" parsed as "8.0").
+function isPlausible(nutrient: 'salt' | 'sugar' | 'saturatedFat', value: number): boolean {
+  if (value < 0) return false;
+  if (nutrient === 'salt' && value > 50) return false;
+  if (nutrient === 'sugar' && value > 100) return false;
+  if (nutrient === 'saturatedFat' && value > 100) return false;
+  return true;
+}
+
+function rationale(
+  nutrient: 'salt' | 'sugar' | 'saturatedFat',
+  value: number,
+  band: Band,
+  amberAt: number,
+  redAt: number,
+  basisLabel: string,
+): string {
   switch (band) {
     case 'green':
-      return `${value.toFixed(2)} g/100g — lavt indhold (under ${t.amber} g).`;
+      return `${value.toFixed(2)} g${basisLabel} — lavt indhold (under ${amberAt} g).`;
     case 'amber':
-      return `${value.toFixed(2)} g/100g — moderat indhold (${t.amber}–${t.red} g).`;
+      return `${value.toFixed(2)} g${basisLabel} — moderat indhold (${amberAt}–${redAt} g).`;
     case 'red':
-      return `${value.toFixed(2)} g/100g — højt indhold (over ${t.red} g).`;
+      return `${value.toFixed(2)} g${basisLabel} — højt indhold (over ${redAt} g).`;
   }
 }
 
-export function scoreLabel(label: ExtractedLabel): ScoreResult {
+export function scoreProduct(product: Product): ScoreResult {
+  const category = classifyCategory(product.categoryTags);
+  const cat = rules.categories[category];
+  const basisLabel = category === 'beverage' ? '/100 ml' : '/100 g';
+
   const findings: NutrientFinding[] = [];
-  const n = label.nutritionPer100g;
 
   for (const nutrient of ['salt', 'sugar', 'saturatedFat'] as const) {
-    const value = n[nutrient];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      const band = bandFor(value, nutrient);
+    const value = product.nutrition[nutrient];
+    const t = cat.thresholds[nutrient];
+
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
       findings.push({
         nutrient,
         labelDa: NUTRIENT_LABEL_DA[nutrient],
-        valuePer100g: value,
-        band,
-        rationaleDa: rationale(nutrient, value, band),
-      });
-    } else {
-      findings.push({
-        nutrient,
-        labelDa: NUTRIENT_LABEL_DA[nutrient],
-        valuePer100g: null,
+        value: null,
         band: 'amber',
         rationaleDa: 'Ikke fundet på etiketten.',
       });
+      continue;
     }
+
+    if (!isPlausible(nutrient, value)) {
+      findings.push({
+        nutrient,
+        labelDa: NUTRIENT_LABEL_DA[nutrient],
+        value,
+        band: 'amber',
+        rationaleDa: `Mistænkelig værdi (${value.toFixed(2)} g${basisLabel}). Prøv at scanne igen.`,
+      });
+      continue;
+    }
+
+    const band = bandFor(value, t.amberAt, t.redAt);
+    findings.push({
+      nutrient,
+      labelDa: NUTRIENT_LABEL_DA[nutrient],
+      value,
+      band,
+      rationaleDa: rationale(nutrient, value, band, t.amberAt, t.redAt, basisLabel),
+    });
   }
 
-  if (typeof n.fiber === 'number' && Number.isFinite(n.fiber)) {
+  // Fibre is bonus information (food only — Nøglehullets whole-grain criterion
+  // is per 100g of dry food).
+  if (
+    category === 'food' &&
+    typeof product.nutrition.fiber === 'number' &&
+    Number.isFinite(product.nutrition.fiber)
+  ) {
+    const fiber = product.nutrition.fiber;
     findings.push({
       nutrient: 'fiber',
       labelDa: NUTRIENT_LABEL_DA.fiber,
-      valuePer100g: n.fiber,
-      band: n.fiber >= FIBER_BONUS_PER_100G ? 'green' : 'amber',
-      rationaleDa: rationale('fiber', n.fiber, 'green'),
+      value: fiber,
+      band: fiber >= rules.fiberBonusPer100g ? 'green' : 'amber',
+      rationaleDa:
+        fiber >= rules.fiberBonusPer100g
+          ? `${fiber.toFixed(1)} g/100 g — opfylder Nøglehullets fuldkornskriterium (≥ ${rules.fiberBonusPer100g} g).`
+          : `${fiber.toFixed(1)} g/100 g — under Nøglehullets fuldkornskriterium (${rules.fiberBonusPer100g} g).`,
     });
   }
 
   const reds = findings.filter((f) => f.band === 'red').length;
+  const knownPrimary = findings.filter(
+    (f) => f.value !== null && f.nutrient !== 'fiber',
+  ).length;
   const greens = findings.filter(
     (f) => f.band === 'green' && f.nutrient !== 'fiber',
-  ).length;
-  const known = findings.filter(
-    (f) => f.valuePer100g !== null && f.nutrient !== 'fiber',
   ).length;
 
   let verdict: Verdict;
   let headlineDa: string;
   let subheadDa: string;
 
-  if (known === 0) {
+  if (knownPrimary === 0) {
     verdict = 'unknown';
     headlineDa = 'Ingen næringsdata fundet';
-    subheadDa = 'Vi kunne ikke aflæse næringsindholdet. Prøv at tage et nyt billede af bagsiden.';
+    subheadDa = 'Vi kunne ikke aflæse næringsindholdet. Prøv at scanne stregkoden eller bagsiden igen.';
   } else if (reds > 0) {
     verdict = 'warning';
-    headlineDa = 'Advarsel';
+    headlineDa = 'Spis sjældent';
     subheadDa =
       reds === 1
-        ? '1 næringsstof overskrider Sundhedsstyrelsens anbefalede grænse.'
-        : `${reds} næringsstoffer overskrider Sundhedsstyrelsens anbefalede grænser.`;
-  } else if (greens === known) {
+        ? 'Ét næringsstof er over Sundhedsstyrelsens anbefalede grænse.'
+        : `${reds} næringsstoffer er over Sundhedsstyrelsens anbefalede grænser.`;
+  } else if (greens === knownPrimary) {
     verdict = 'proof';
-    headlineDa = 'Sundhedsstyrelsen-godkendt';
-    subheadDa = 'Alle målte næringsstoffer ligger inden for de officielle anbefalinger.';
+    headlineDa = 'Et grønt valg';
+    subheadDa = 'Alle målte næringsstoffer ligger inden for De Officielle Kostråds anbefalinger.';
   } else {
     verdict = 'moderate';
     headlineDa = 'Spis med måde';
     subheadDa = 'Produktet ligger i det moderate område for et eller flere næringsstoffer.';
   }
 
-  return { verdict, headlineDa, subheadDa, findings };
+  return {
+    verdict,
+    headlineDa,
+    subheadDa,
+    findings,
+    appliedRulesVersion: rules.version,
+    appliedCategory: category,
+    basis: cat.basis,
+  };
 }
