@@ -38,6 +38,11 @@ export default function HomeScreen() {
               <Text style={styles.secondaryBtnText}>Historik</Text>
             </Pressable>
           </Link>
+          <Link href="/settings" asChild>
+            <Pressable style={({ pressed }) => [styles.secondaryBtn, styles.secondaryHalf, pressed && styles.pressed]}>
+              <Text style={styles.secondaryBtnText}>Indstillinger</Text>
+            </Pressable>
+          </Link>
         </View>
 
         <View style={styles.infoCard}>
