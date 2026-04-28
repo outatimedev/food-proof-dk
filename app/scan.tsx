@@ -208,6 +208,9 @@ export default function ScanScreen() {
               lockRef.current = false;
             }}
             style={[styles.segmentBtn, mode === 'barcode' && styles.segmentBtnActive]}
+            accessibilityRole="button"
+            accessibilityLabel="Skift til stregkode-scanning"
+            accessibilityState={{ selected: mode === 'barcode' }}
           >
             <Text style={[styles.segmentText, mode === 'barcode' && styles.segmentTextActive]}>
               Stregkode
@@ -220,6 +223,9 @@ export default function ScanScreen() {
               lockRef.current = false;
             }}
             style={[styles.segmentBtn, mode === 'label' && styles.segmentBtnActive]}
+            accessibilityRole="button"
+            accessibilityLabel="Skift til etiket-fotografering"
+            accessibilityState={{ selected: mode === 'label' }}
           >
             <Text style={[styles.segmentText, mode === 'label' && styles.segmentTextActive]}>
               Etiket
@@ -273,6 +279,8 @@ export default function ScanScreen() {
           <Pressable
             onPress={captureLabel}
             disabled={!!busy}
+            accessibilityRole="button"
+            accessibilityLabel="Tag billede af etiketten"
             style={({ pressed }) => [
               styles.shutter,
               pressed && styles.shutterPressed,
