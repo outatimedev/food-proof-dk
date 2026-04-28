@@ -1,0 +1,20 @@
+name = "foodproof-dk-proxy"
+main = "worker.ts"
+compatibility_date = "2025-01-01"
+
+# KV namespace for free-tier daily vision quota (per device, per day in
+# Europe/Copenhagen). Run:
+#   npx wrangler kv:namespace create QUOTA_KV
+# and paste the returned id here.
+[[kv_namespaces]]
+binding = "QUOTA_KV"
+id = "REPLACE_WITH_KV_ID"
+
+# Optional: comma-separated list of allowed Origin headers. Leave empty to
+# accept all (the default for development; tighten for web preview builds).
+[vars]
+ALLOWED_ORIGINS = ""
+
+# Secrets (do NOT put values here — set with `wrangler secret put NAME`):
+#   ANTHROPIC_API_KEY        — required, server-held Anthropic key
+#   REVENUECAT_SECRET_KEY    — optional, enables Pro entitlement check
