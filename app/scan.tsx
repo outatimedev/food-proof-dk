@@ -10,12 +10,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { analyzeLabelImage, VisionExtractionError } from '@/lib/analyze';
-import {
-  fetchByBarcode,
-  hasScoreableNutrition,
-  OpenFoodFactsNotFoundError,
-} from '@/lib/openfoodfacts';
+import { ErrorCard } from '@/components/ErrorCard';
+import { analyzeLabelImage } from '@/lib/analyze';
+import { ClassifiedError, classify } from '@/lib/errors';
+import { fetchByBarcode, hasScoreableNutrition } from '@/lib/openfoodfacts';
 import { scoreProduct } from '@/lib/scoring';
 import { Product } from '@/lib/types';
 import { colors, radius } from '@/theme';
@@ -29,7 +27,7 @@ export default function ScanScreen() {
   const cameraRef = useRef<CameraView>(null);
   const [mode, setMode] = useState<Mode>('barcode');
   const [busy, setBusy] = useState<null | string>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ClassifiedError | null>(null);
   const lockRef = useRef(false);
 
   const goToResult = useCallback((product: Product) => {
@@ -44,7 +42,7 @@ export default function ScanScreen() {
   }, []);
 
   const onBarcodeScanned = useCallback(
-    async ({ data, type }: { data: string; type: string }) => {
+    async ({ data }: { data: string; type: string }) => {
       if (lockRef.current || busy || mode !== 'barcode') return;
       lockRef.current = true;
       setError(null);
@@ -52,24 +50,20 @@ export default function ScanScreen() {
       try {
         const product = await fetchByBarcode(data);
         if (!hasScoreableNutrition(product)) {
-          // OFF has the product but no nutrition — fall back to label OCR.
           setBusy(null);
-          setError(
-            `Fandt produktet men ingen næringsdata. Skift til "Etiket" og fotografér bagsiden.`,
-          );
+          setError({
+            kind: 'no_nutrition_data',
+            titleDa: 'Ingen næringsdata',
+            bodyDa: `Fandt produktet ${product.productName ?? data} men uden næringsdeklaration. Fotografér bagsiden i stedet.`,
+            cta: { primary: 'Fotografér etiket', secondary: 'Indtast manuelt' },
+          });
           lockRef.current = false;
           return;
         }
         goToResult(product);
       } catch (err) {
         setBusy(null);
-        if (err instanceof OpenFoodFactsNotFoundError) {
-          setError(
-            `Stregkode ${data} (${type}) er ikke i databasen. Skift til "Etiket" og fotografér bagsiden.`,
-          );
-        } else {
-          setError(err instanceof Error ? err.message : String(err));
-        }
+        setError(classify(err));
         lockRef.current = false;
       }
     },
@@ -90,7 +84,7 @@ export default function ScanScreen() {
       await runVision(photo.base64, 'image/jpeg');
     } catch (err) {
       setBusy(null);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(classify(err));
     }
   };
 
@@ -111,7 +105,7 @@ export default function ScanScreen() {
       await runVision(asset.base64!, mediaType);
     } catch (err) {
       setBusy(null);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(classify(err));
     }
   };
 
@@ -121,9 +115,12 @@ export default function ScanScreen() {
   ) => {
     if (!API_KEY) {
       setBusy(null);
-      setError(
-        'EXPO_PUBLIC_ANTHROPIC_API_KEY mangler. Tilføj den til .env og genstart Expo.',
-      );
+      setError({
+        kind: 'auth_failed',
+        titleDa: 'API-nøgle mangler',
+        bodyDa: 'Tilføj EXPO_PUBLIC_ANTHROPIC_API_KEY til .env og genstart Expo.',
+        cta: { primary: 'OK' },
+      });
       return;
     }
     try {
@@ -135,11 +132,7 @@ export default function ScanScreen() {
       goToResult(product);
     } catch (err) {
       setBusy(null);
-      if (err instanceof VisionExtractionError) {
-        setError(`Vision fejlede: ${err.message}`);
-      } else {
-        setError(err instanceof Error ? err.message : String(err));
-      }
+      setError(classify(err));
     }
   };
 
@@ -228,8 +221,27 @@ export default function ScanScreen() {
       )}
 
       {error && !busy && (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={styles.errorContainer}>
+          <ErrorCard
+            error={error}
+            onPrimary={() => {
+              if (error.kind === 'product_not_found' || error.kind === 'no_nutrition_data') {
+                setMode('label');
+                setError(null);
+                lockRef.current = false;
+              } else if (error.kind === 'offline' || error.kind === 'rate_limited' || error.kind === 'vision_failed') {
+                setError(null);
+                lockRef.current = false;
+              } else {
+                setError(null);
+              }
+            }}
+            onSecondary={() => {
+              if (error.kind === 'product_not_found' || error.kind === 'no_nutrition_data' || error.kind === 'vision_failed') {
+                router.push('/manual');
+              }
+            }}
+          />
         </View>
       )}
 
@@ -346,16 +358,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   busyText: { color: '#fff', fontSize: 14, flex: 1 },
-  errorBox: {
+  errorContainer: {
     position: 'absolute',
-    bottom: 200,
+    bottom: 180,
     left: 16,
     right: 16,
-    backgroundColor: colors.redBg,
-    padding: 12,
-    borderRadius: radius.md,
   },
-  errorText: { color: colors.red, fontSize: 13 },
   controls: {
     position: 'absolute',
     left: 0,

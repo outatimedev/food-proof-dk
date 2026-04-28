@@ -15,7 +15,8 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" options={{ title: 'FoodProof DK' }} />
-        <Stack.Screen name="scan" options={{ title: 'Scan etiket' }} />
+        <Stack.Screen name="scan" options={{ title: 'Scan' }} />
+        <Stack.Screen name="manual" options={{ title: 'Manuel indtastning' }} />
         <Stack.Screen name="result" options={{ title: 'Resultat' }} />
       </Stack>
     </>

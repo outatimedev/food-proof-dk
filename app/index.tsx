@@ -22,6 +22,12 @@ export default function HomeScreen() {
           </Pressable>
         </Link>
 
+        <Link href="/manual" asChild>
+          <Pressable style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}>
+            <Text style={styles.secondaryBtnText}>Indtast stregkode manuelt</Text>
+          </Pressable>
+        </Link>
+
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>Sådan virker det</Text>
           <Text style={styles.infoLine}>
@@ -83,6 +89,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
+  secondaryBtn: {
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  secondaryBtnText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   infoCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
