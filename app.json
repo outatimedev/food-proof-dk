@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "FoodProof DK",
+    "slug": "food-proof-dk",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "foodproofdk",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dk.foodproof.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "FoodProof DK uses the camera to scan food labels and compare them with Sundhedsstyrelsen's official dietary guidelines.",
+        "NSPhotoLibraryUsageDescription": "FoodProof DK reads food label photos from your library so it can analyse them against Sundhedsstyrelsen's official dietary guidelines."
+      }
+    },
+    "android": {
+      "package": "dk.foodproof.app",
+      "permissions": ["android.permission.CAMERA", "android.permission.READ_EXTERNAL_STORAGE"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow FoodProof DK to access your camera so it can scan food labels."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow FoodProof DK to access your photos so it can analyse food labels."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
